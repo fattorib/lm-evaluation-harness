@@ -17,7 +17,7 @@ class BFLM(BaseLM):
         subfolder=None,
         tokenizer=None,
         batch_size=1,
-        model_size = 'base*',
+        model_size = 'XL',
         model_weights_path = ''
     ):
         super().__init__()
@@ -40,6 +40,7 @@ class BFLM(BaseLM):
                 else torch.device("cpu")
             )
 
+        print(model_size)
         if model_size == 'base':
             self.gpt = model_getter(
                 model_size,
