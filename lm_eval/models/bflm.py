@@ -17,7 +17,7 @@ class BFLM(BaseLM):
         subfolder=None,
         tokenizer=None,
         batch_size=1,
-        model_size = 'XL',
+        model_size = 'XL*',
         model_weights_path = ''
     ):
         super().__init__()
