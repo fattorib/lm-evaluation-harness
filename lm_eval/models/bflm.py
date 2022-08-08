@@ -18,7 +18,7 @@ class BFLM(BaseLM):
         tokenizer=None,
         batch_size=1,
         model_size = 'XL*',
-        model_weights_path = ''
+        model_weights_path = 'checkpoints/training_params.pth.tar'
     ):
         super().__init__()
 
