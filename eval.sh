@@ -1,0 +1,1 @@
+python main.py --model-size XL* --checkpoint-path training_params.pth.tar --tasks lambada,piqa,hellaswag,winogrande --device 0
