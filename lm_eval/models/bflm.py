@@ -56,7 +56,7 @@ class BFLM(BaseLM):
 
             del state_dict
                 
-        elif model_size == 'XL*':
+        elif model_size == 'XL':
             self.gpt = model_getter(
                 model_size,
                 vocab_size=50257,
