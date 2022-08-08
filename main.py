@@ -41,6 +41,10 @@ def parse_args():
     parser.add_argument("--description_dict_path", default=None)
     parser.add_argument("--check_integrity", action="store_true")
 
+    # Additional Args
+    parser.add_argument("--model-size", type=str, default=None)
+    parser.add_argument("--checkpoint-path", type=str, default=None)
+
     return parser.parse_args()
 
 
@@ -58,6 +62,8 @@ def main():
     args = parse_args()
 
     assert not args.provide_description  # not implemented
+
+    assert args.model == 'benlm', "Check model name"
 
     if args.limit:
         print(
