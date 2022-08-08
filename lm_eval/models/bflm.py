@@ -1,12 +1,12 @@
 import transformers
 import torch
 from lm_eval.base import BaseLM
-
-# Intended to be a subdirectory in 
 import sys
-sys.path.insert(0, 'C:/Users/Ben/Desktop/AttentionIsForSuckers-1/')
-from src.models.GPT2 import model_getter
 from transformers import GPT2TokenizerFast
+
+from lm_eval.models.fastergpt_base import model_getter
+
+
 
 class BFLM(BaseLM):
     def __init__(
@@ -55,55 +55,7 @@ class BFLM(BaseLM):
             self.gpt.load_state_dict(state_dict)
 
             del state_dict
-
-        elif model_size == 'base*':
-            self.gpt = model_getter(
-                model_size,
-                vocab_size=50257,
-                num_ctx=512,
-                **{"fused_residuals": True, "num_head": 8, "use_alibi": True},
-            )
-
-            state_dict = torch.load(
-                model_weights_path,
-                map_location="cpu",
-                )
-
-            self.gpt.load_state_dict(state_dict)
-
-            del state_dict
-
-            PRIME_CTX = 1024
-            # prime with ctx of 1024:
-            with torch.no_grad():
-                data_batch = torch.randint(low=0, high=50257, size=(1, PRIME_CTX))
-                self.gpt(data_batch)
-                print(f'Evaluating ALiBi model with context: {PRIME_CTX}')
-        
-        elif model_size == 'medium*':
-            self.gpt = model_getter(
-                model_size,
-                vocab_size=50257,
-                num_ctx=512,
-                **{"fused_residuals": True, "num_head": 8, "use_alibi": True},
-            )
-
-            state_dict = torch.load(
-                model_weights_path,
-                map_location="cpu",
-                )
-
-            self.gpt.load_state_dict(state_dict)
-
-            del state_dict
-
-            PRIME_CTX = 1024
-            # prime with ctx of 1024:
-            with torch.no_grad():
-                data_batch = torch.randint(low=0, high=50257, size=(1, PRIME_CTX))
-                self.gpt(data_batch)
-                print(f'Evaluating ALiBi model with context: {PRIME_CTX}')
-        
+                
         elif model_size == 'XL*':
             self.gpt = model_getter(
                 model_size,
