@@ -19,7 +19,7 @@ def simple_evaluate(
     device=None,
     no_cache=False,
     limit=None,
-    bootstrap_iters=100000,
+    bootstrap_iters=100,
     description_dict=None,
     check_integrity=False,
     decontamination_ngrams_path=None,
