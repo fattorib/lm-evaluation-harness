@@ -1,1 +1,1 @@
-python main.py --model-size XL* --checkpoint-path checkpoints/training_params.pth.tar --tasks lambada,piqa,hellaswag,winogrande --device 0 --model benlm
+python main.py --model benlm --checkpoint-path checkpoints/training_params.pth.tar --tasks lambada,piqa,hellaswag,winogrande --device 0 --model benlm
