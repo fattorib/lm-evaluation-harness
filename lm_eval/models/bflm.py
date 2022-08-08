@@ -41,6 +41,7 @@ class BFLM(BaseLM):
             )
 
         print(model_size)
+        print(model_weights_path)
         if model_size == 'base':
             self.gpt = model_getter(
                 model_size,
