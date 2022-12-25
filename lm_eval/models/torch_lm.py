@@ -39,8 +39,8 @@ class GPTCustom(BaseLM):
                 else torch.device("cpu")
             )
 
-        print(model_size)
-        print(model_weights_path)
+        print(f"Model Size: {model_size}")
+        print(f"Model Weights Path: {model_weights_path}")
 
         self.gpt = model_getter(
             model_size,
