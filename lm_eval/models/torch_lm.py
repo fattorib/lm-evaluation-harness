@@ -1,8 +1,7 @@
 import transformers
 import torch
 from lm_eval.base import BaseLM
-import sys
-from transformers import GPT2TokenizerFast, GPTNeoXTokenizerFast
+from transformers import GPTNeoXTokenizerFast
 from lm_eval.models.gpt_pytorch import model_getter
 
 
