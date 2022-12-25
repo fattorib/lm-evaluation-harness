@@ -1,3 +1,8 @@
+# Language Model Evaluation Harness Fork
+
+Fork of lm-eval harness for use with my models. 
+
+# Original Readme
 # Language Model Evaluation Harness
 
 ![](https://github.com/EleutherAI/lm-evaluation-harness/workflows/Build/badge.svg)

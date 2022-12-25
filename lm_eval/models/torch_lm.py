@@ -2,13 +2,12 @@ import transformers
 import torch
 from lm_eval.base import BaseLM
 import sys
-from transformers import GPT2TokenizerFast
-
-from lm_eval.models.fastergpt_base import model_getter
-
+from transformers import GPT2TokenizerFast, GPTNeoXTokenizerFast
+from lm_eval.models.gpt_pytorch import model_getter
 
 
-class BFLM(BaseLM):
+
+class GPTCustom(BaseLM):
     def __init__(
         self,
         device="cuda",
@@ -17,8 +16,8 @@ class BFLM(BaseLM):
         subfolder=None,
         tokenizer=None,
         batch_size=1,
-        model_size = 'XL*',
-        model_weights_path = 'checkpoints/training_params.pth.tar'
+        model_size = None,
+        model_weights_path = None
     ):
         super().__init__()
 
@@ -42,57 +41,32 @@ class BFLM(BaseLM):
 
         print(model_size)
         print(model_weights_path)
-        if model_size == 'base':
-            self.gpt = model_getter(
-                model_size,
-                vocab_size=50257,
-                num_ctx=1024,
-                **{"use_alibi": False},
+
+        self.gpt = model_getter(
+            model_size,
+            vocab_size=50304,
+            num_ctx=1024, #Defaults to 2048 ctx, but this is flexible 
+        )
+        state_dict = torch.load(
+            model_weights_path,
+            map_location="cpu",
             )
-            state_dict = torch.load(
-                model_weights_path,
-                map_location="cpu",
-                )
 
-            self.gpt.load_state_dict(state_dict)
+        self.gpt.load_state_dict(state_dict)
 
-            del state_dict
+        del state_dict
                 
-        elif model_size == 'XL*':
-            self.gpt = model_getter(
-                model_size,
-                vocab_size=50257,
-                num_ctx=512,
-                **{"fused_residuals": True, "num_head": 8, "use_alibi": True},
-            )
-
-            state_dict = torch.load(
-                model_weights_path,
-                map_location="cpu",
-                )
-
-            self.gpt.load_state_dict(state_dict['state_dict'])
-
-            del state_dict
-
-            PRIME_CTX = 1024
-            # prime with ctx of 1024:
-            with torch.no_grad():
-                data_batch = torch.randint(low=0, high=50257, size=(1, PRIME_CTX))
-                self.gpt(data_batch)
-                print(f'Evaluating ALiBi model with context: {PRIME_CTX}')
-        
-        
         self.gpt.to(self.device)        
         self.gpt.eval()
 
-        self.tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+        self.tokenizer = GPTNeoXTokenizerFast.from_pretrained("EleutherAI/gpt-neox-20b")
 
         assert isinstance(
             self.tokenizer,
             (
                 transformers.GPT2Tokenizer,
                 transformers.GPT2TokenizerFast,
+                transformers.GPTNeoXTokenizerFast
             ),
         ), "this tokenizer has not been checked for compatibility yet!"
 
@@ -111,10 +85,6 @@ class BFLM(BaseLM):
         # multithreading and batching
         self.batch_size_per_gpu = batch_size  # todo: adaptive batch size
 
-        # TODO: fix multi-gpu
-        # gpus = torch.cuda.device_count()
-        # if gpus > 1:
-        #     self.gpt2 = nn.DataParallel(self.gpt2)
 
     @property
     def eot_token_id(self):
@@ -158,7 +128,7 @@ class BFLM(BaseLM):
         logits returned from the model
         """
         with torch.no_grad():
-            return self.gpt(inps)[:, :, :50257]
+            return self.gpt(inps)[:, :, :50304]
 
     def _model_generate(self, context, max_length, eos_token_id):
         return self.gpt.generate(

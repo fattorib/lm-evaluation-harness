@@ -63,8 +63,6 @@ def main():
 
     assert not args.provide_description  # not implemented
 
-    assert args.model == 'benlm', "Check model name"
-
     if args.limit:
         print(
             "WARNING: --limit SHOULD ONLY BE USED FOR TESTING. REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT."

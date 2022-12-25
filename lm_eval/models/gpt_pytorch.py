@@ -1,10 +1,11 @@
-from functools import partial
-import torch
-import torch.nn as nn
 import copy
 import math
+from functools import partial
+from typing import List, Tuple, Union
+
+import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from typing import Union, Tuple, List
 
 """
 Module class for GPT2. Follows paper specifications wherever possible.
@@ -33,7 +34,7 @@ def _weights_init(m, num_layers):
 
     for name, p in m.named_parameters():
         if "fc_resid" in name and "weight" in name:
-            p.data.normal_(mean=0.0, std=(0.02 / math.sqrt(num_layers)))
+            p.data.normal_(mean=0.0, std=(0.02 / math.sqrt(2 * num_layers)))
 
 
 def _embedding_init(m):
@@ -46,11 +47,13 @@ def _embedding_init(m):
 class MLPBlock(nn.Module):
     def __init__(self, dim1: int, dim2: int, p: float, num_layers: int) -> None:
         """An MLP block.
+
         Args:
             dim1 (int): Input dimension
             dim2 (int): Output dimension
             p (float): Dropout probability
             num_layers (int): Number of total module layers. Used for weight initialization
+
         """
         super().__init__()
         self.dim1 = dim1
@@ -81,9 +84,11 @@ class ALiBi(nn.Module):
     Self-attention module with ALiBi as described in paper
     `From Train Short, Test Long: Attention with Linear Biases Enables Input
     Length Extrapolation <https://ofir.io/train_short_test_long.pdf>`
+
     Source code modified from
     <https://github.com/ofirpress/attention_with_linear_biases> and
     <https://github.com/EleutherAI/gpt-neox/blob/main/megatron/model/positional_embeddings.py>
+
     """
 
     def __init__(
@@ -111,14 +116,12 @@ class ALiBi(nn.Module):
         self.n_head = num_head
         self.num_layers = num_layers
 
-        self.register_buffer(
-            "slopes", torch.Tensor(self.get_slopes(self.n_head))
-        )
+        self.register_buffer("slopes", torch.Tensor(self.get_slopes(self.n_head)))
         self.register_buffer(
             "mask",
-            torch.tril(
-                torch.ones(block_size, block_size, dtype=torch.uint8)
-            ).view(1, 1, block_size, block_size),
+            torch.tril(torch.ones(block_size, block_size, dtype=torch.uint8)).view(
+                1, 1, block_size, block_size
+            ),
         )
 
         init_function_partial = partial(
@@ -144,46 +147,80 @@ class ALiBi(nn.Module):
                 ]
             )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        use_cache: bool = False,
+        layer_past: Tuple[torch.Tensor, torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         B, T, C = x.size()
         k = (
-            self.key(x)
-            .view(B, T, self.n_head, C // self.n_head)
-            .transpose(1, 2)
+            self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         )  # (B, nh, T, hs)
         q = (
-            self.query(x)
-            .view(B, T, self.n_head, C // self.n_head)
-            .transpose(1, 2)
+            self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         )  # (B, nh, T, hs)
         v = (
-            self.value(x)
-            .view(B, T, self.n_head, C // self.n_head)
-            .transpose(1, 2)
+            self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         )  # (B, nh, T, hs)
 
+        present = None
+        if use_cache:
+            if layer_past is not None:
+                past_keys, past_values = layer_past
+                k = torch.cat((past_keys, k), dim=-2)
+                v = torch.cat((past_values, v), dim=-2)
+
+            present = torch.stack((k, v))
+
+        # Need to grab these
+        seq_len_k, seq_len_q = k.size(-2), q.size(-2)
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 
         # Creation of ALiBi distance matrix -> Computed on first forward pass
         # and stored. If CTX changes, we update this
-        if self.cached_ctx != T:
+        if self.cached_ctx != seq_len_k:
+
             # Update Buffer mask
             self.mask = (
-                torch.tril(torch.ones(T, T, dtype=torch.uint8))
-                .view(1, 1, T, T)
+                torch.tril(torch.ones(seq_len_k, seq_len_k, dtype=torch.uint8))
+                .view(1, 1, seq_len_k, seq_len_k)
                 .to(x.device)
             )
 
             # Create ALiBi distance matrix
             a = -torch.tril(
-                torch.arange(T).view(T, 1).repeat(1, T)
-                + torch.arange(0, -T, -1)
+                torch.arange(seq_len_k).view(seq_len_k, 1).repeat(1, seq_len_k)
+                + torch.arange(0, -seq_len_k, -1)
             )
             a = a.to(x.device).to(x.dtype)
 
             self.alibi_cache = a * self.slopes.view(self.slopes.shape[0], 1, 1)
-            self.cached_ctx = T
+            self.cached_ctx = seq_len_k
+
+        if seq_len_k != seq_len_q:
+            assert (
+                seq_len_q == 1
+            ), "assumption sq == sk unless at inference time with cache in layer_past with sq == 1"
+            # Update Buffer mask
+            self.mask = (
+                torch.tril(torch.ones(seq_len_k, seq_len_k, dtype=torch.uint8))
+                .view(1, 1, seq_len_k, seq_len_k)
+                .to(x.device)
+            )
+
+            # Create ALiBi distance matrix
+            a = -torch.tril(
+                torch.arange(seq_len_k).view(seq_len_k, 1).repeat(1, seq_len_k)
+                + torch.arange(0, -seq_len_k, -1)
+            )
+
+            a = a.to(x.device).to(x.dtype)
+
+            a = a * self.slopes.view(self.slopes.shape[0], 1, 1)
+
+            self.alibi_cache = a[:, seq_len_k - 1, :].view(a.shape[0], 1, a.shape[2])
 
         att = att + self.alibi_cache
 
@@ -196,87 +233,13 @@ class ALiBi(nn.Module):
 
         # output projection
         y = self.resid_drop(self.fc_resid(y))
-        return y
-
-
-class CausalSelfAttention(nn.Module):
-    """
-    A vanilla multi-head masked self-attention layer with a projection at the end.
-    Minor modifications from `https://github.com/karpathy/minGPT/`
-    """
-
-    def __init__(
-        self,
-        embedding_dim: int,
-        num_head: int,
-        block_size: int,
-        resid_dropout: float,
-        num_layers: int,
-    ) -> None:
-        super().__init__()
-        assert embedding_dim % num_head == 0
-        # key, query, value projections for all heads
-        self.key = nn.Linear(embedding_dim, embedding_dim)
-        self.query = nn.Linear(embedding_dim, embedding_dim)
-        self.value = nn.Linear(embedding_dim, embedding_dim)
-        self.attn_drop = nn.Dropout(resid_dropout)
-        self.resid_drop = nn.Dropout(resid_dropout)
-        self.fc_resid = nn.Linear(embedding_dim, embedding_dim)
-        self.register_buffer(
-            "mask",
-            torch.tril(
-                torch.ones(block_size, block_size, dtype=torch.uint8)
-            ).view(1, 1, block_size, block_size),
-        )
-        self.n_head = num_head
-        self.num_layers = num_layers
-
-        init_function_partial = partial(
-            _weights_init, **{"num_layers": self.num_layers}
-        )
-
-        self.apply(init_function_partial)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-    ) -> torch.Tensor:
-        B, T, C = x.size()
-
-        k = (
-            self.key(x)
-            .view(B, T, self.n_head, C // self.n_head)
-            .transpose(1, 2)
-        )  # (B, nh, T, hs)
-        q = (
-            self.query(x)
-            .view(B, T, self.n_head, C // self.n_head)
-            .transpose(1, 2)
-        )  # (B, nh, T, hs)
-        v = (
-            self.value(x)
-            .view(B, T, self.n_head, C // self.n_head)
-            .transpose(1, 2)
-        )  # (B, nh, T, hs)
-
-        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
-        att = F.softmax(att, dim=-1)
-        att = self.attn_drop(att)
-        y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = (
-            y.transpose(1, 2).contiguous().view(B, T, C)
-        )  # re-assemble all head outputs side by side
-
-        # output projection
-        y = self.resid_drop(self.fc_resid(y))
-        return y
+        return y, present
 
 
 class GPT2Block(nn.Module):
     """
     Standard Transformer block
+
     Based on `https://github.com/karpathy/minGPT/` with modifications
     """
 
@@ -287,8 +250,8 @@ class GPT2Block(nn.Module):
         block_size: int,
         resid_dropout: float,
         num_layers: int,
-        fused_residuals: bool,
-        use_alibi: bool,
+        fused_residuals: bool = False,
+        use_alibi: bool = True,
     ) -> None:
         super().__init__()
         self.ln1 = nn.LayerNorm(embedding_dim)
@@ -299,13 +262,15 @@ class GPT2Block(nn.Module):
 
         if use_alibi:
             self.attn = ALiBi(
-                embedding_dim, num_head, block_size, resid_dropout, num_layers
+                embedding_dim,
+                num_head,
+                block_size,
+                resid_dropout,
+                num_layers,
             )
 
         else:
-            self.attn = CausalSelfAttention(
-                embedding_dim, num_head, block_size, resid_dropout, num_layers
-            )
+            raise NotImplementedError("Model conversion only support ALiBi")
 
         self.mlp = MLPBlock(
             embedding_dim,
@@ -314,13 +279,22 @@ class GPT2Block(nn.Module):
             num_layers,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        use_cache: bool = False,
+        layer_past: Tuple[torch.Tensor, torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.fused_residuals:
-            x = x + self.mlp(self.ln1(x)) + self.attn(self.ln1(x))
+            mlp_out = self.mlp(self.ln1(x))
+            attn_out = self.attn(self.ln1(x), use_cache, layer_past)
+            x = x + mlp_out + attn_out[0]
         else:
-            x = x + self.attn(self.ln1(x))
+            attn_out = self.attn(self.ln1(x), use_cache, layer_past)
+            x = x + attn_out[0]
             x = x + self.mlp(self.ln2(x))
-        return x
+
+        return x, attn_out[1]
 
 
 class GPT2(nn.Module):
@@ -336,7 +310,6 @@ class GPT2(nn.Module):
         resid_dropout: float = 0.0,
         embedding_dropout: float = 0.0,
         use_alibi: bool = False,
-        use_bnb = False 
     ):
         super().__init__()
         self.num_ctx = num_ctx
@@ -354,11 +327,7 @@ class GPT2(nn.Module):
         Basic GPT2 transformer module
         """
 
-        if use_bnb:
-            import bitsandbytes as bnb 
-            self.wte = bnb.nn.StableEmbedding(self.vocab_size, self.embedding_dim)
-        else:
-            self.wte = nn.Embedding(self.vocab_size, self.embedding_dim)
+        self.wte = nn.Embedding(self.vocab_size, self.embedding_dim)
 
         if not self.use_alibi:
             self.wpe = nn.Embedding(self.num_ctx, self.embedding_dim)
@@ -378,7 +347,7 @@ class GPT2(nn.Module):
                         use_alibi=self.use_alibi,
                     )
                 )
-                for _ in range(self.N)
+                for i in range(self.N)
             ]
         )
 
@@ -400,18 +369,19 @@ class GPT2(nn.Module):
         """
         Small generation method for compatibility with LM-Eval harness. Defaults
         to greedy decoding
+
         Parameters:
             context ('torch.Tensor'):
                 Input context to prime the model
+
             max_length ('int'):
                 The maximum length of tokens to generate (sum of context + *generated tokens*)
+
             sample ('bool'):
                 Bool whether to sample from logits distribution
         """
 
-        context = torch.tensor(context, dtype=torch.long).to(
-            self.wte.weight.device
-        )
+        context = torch.tensor(context, dtype=torch.long).to(self.wte.weight.device)
 
         x = context.view(1, -1)
 
@@ -445,15 +415,28 @@ class GPT2(nn.Module):
         self,
         x: torch.Tensor,
         labels: torch.Tensor = None,
+        use_cache: bool = False,
+        past_states: Tuple[torch.Tensor, torch.Tensor] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
 
         b, t = x.size()
 
         if not self.use_alibi:
-            position_ids = torch.arange(0, t, dtype=torch.long, device=x.device)
-            position_ids = position_ids.unsqueeze(0).view(-1, t)
+            if past_states is None:
+                position_ids = torch.arange(0, t, dtype=torch.long, device=x.device)
+                position_ids = position_ids.unsqueeze(0).view(-1, t)
+                position_embeds = self.wpe(position_ids)
+            else:
+                past_length = past_states[0][0].size(-2)
 
-            position_embeds = self.wpe(position_ids)
+                position_ids = torch.arange(
+                    past_length,
+                    t + past_length,
+                    dtype=torch.long,
+                    device=x.device,
+                )
+                position_ids = position_ids.unsqueeze(0).expand_as(x)
+                position_embeds = self.wpe(position_ids)
 
         x = self.wte(x)
 
@@ -462,8 +445,17 @@ class GPT2(nn.Module):
         else:
             x = self.dropout(x)
 
-        for block in self.blocks:
-            x = block(x)
+        present_states = []
+        if not use_cache:
+            past_states = [None] * self.N
+
+        if past_states is None:
+            past_states = [None] * self.N
+
+        for block, past_state in zip(self.blocks, past_states):
+            x, layer_past = block(x, use_cache, past_state)
+
+            present_states.append(layer_past)
 
         x = self.norm(x)
 
@@ -483,108 +475,154 @@ class GPT2(nn.Module):
 
             return logits_lm, loss
         else:
-            return logits_lm
+            if use_cache:
+                return logits_lm, present_states
+            else:
+                return logits_lm
 
 
-def create_GPT2_qa(vocab_size, num_ctx, **kwargs):
+def create_GPT2_test(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     """
-    QA model for testing
+    Unittest model
     """
-    return GPT2(
-        num_ctx=num_ctx, embedding_dim=128, N=4, vocab_size=vocab_size, **kwargs
+    model = GPT2(
+        num_ctx=num_ctx,
+        embedding_dim=128,
+        N=2,
+        vocab_size=vocab_size,
+        num_head=8,
+        fused_residuals=False,
+        use_alibi=True,
+        **kwargs,
     )
 
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
 
-def create_GPT2_base(vocab_size, num_ctx, **kwargs):
+        model.load_state_dict(state_dict)
+
+    return model
+
+
+def create_GPT2_flax(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     """
-    Matches the parameters of the original GPT2-117M model
+    TODO: Fill this in
     """
-    return GPT2(
+    model = GPT2(
         num_ctx=num_ctx,
         embedding_dim=768,
-        N=12,
-        vocab_size=vocab_size,
-        **kwargs
-    )
-
-
-def create_GPT2_medium(vocab_size, num_ctx, **kwargs):
-    """
-    Matches the parameters of the original GPT2-345M model
-    """
-    return GPT2(
-        num_ctx=num_ctx,
-        embedding_dim=1024,
-        N=24,
-        vocab_size=vocab_size,
-        num_head=16,
-        **kwargs
-    )
-
-
-def create_GPT2_base_optimized(vocab_size, num_ctx, **kwargs):
-    """
-    Updated GPT-medium model optimized for increased throughput.
-    The following changes have been made:
-        1. Parallel Residual layers
-        2. Increased embedding dimension and head dimension (decreased num_heads)
-        3. Decreased model depth to hold params ~constant
-        4. Decreased train ctx due to ALiBi
-    """
-    return GPT2(
-        num_ctx=num_ctx,
-        embedding_dim=1024,
         N=6,
         vocab_size=vocab_size,
-        **kwargs
+        num_head=12,
+        fused_residuals=False,
+        use_alibi=True,
+        **kwargs,
     )
 
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
 
-def create_GPT2_medium_optimized(vocab_size, num_ctx, **kwargs):
+        model.load_state_dict(state_dict)
+
+    return model
+
+
+def create_GPT2_flax_large(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     """
-    Updated GPT-medium model optimized for increased throughput.
-    The following changes have been made:
-        1. Parallel Residual layers
-        2. Increased embedding dimension and head dimension (decreased num_heads)
-        3. Decreased model depth to hold params ~constant
-        4. Decreased train ctx due to ALiBi
+    TODO: Fill this in
     """
-    return GPT2(
+    model = GPT2(
         num_ctx=num_ctx,
         embedding_dim=1536,
-        N=8,
-        vocab_size=vocab_size,
-        **kwargs
-    )
-
-def create_GPT2_XL_optimized(vocab_size, num_ctx, **kwargs):
-    """
-    Updated GPT-XL (ish) model optimized for increased throughput.
-    The following changes have been made:
-        1. Parallel Residual layers
-        2. Increased embedding dimension and head dimension (decreased num_heads)
-        3. Decreased model depth to hold params ~constant
-        4. Decreased train ctx due to ALiBi
-    """
-    return GPT2(
-        num_ctx=num_ctx,
-        embedding_dim=2048,
         N=18,
         vocab_size=vocab_size,
-        use_bnb=True,
-        **kwargs
+        num_head=12,
+        fused_residuals=False,
+        use_alibi=True,
+        **kwargs,
     )
 
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
+
+        model.load_state_dict(state_dict)
+
+    return model
 
 
-def model_getter(model_name, vocab_size, num_ctx, **kwargs):
+def create_GPT2_flax_xlarge(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
+    """
+    TODO: Fill this in
+    """
+    model = GPT2(
+        num_ctx=num_ctx,
+        embedding_dim=1536,
+        N=24,
+        vocab_size=vocab_size,
+        num_head=12,
+        fused_residuals=False,
+        use_alibi=True,
+        **kwargs,
+    )
+
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
+
+        model.load_state_dict(state_dict)
+
+    return model
+
+def create_GPT2_flax_xxlarge(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
+    """
+    TODO: Fill this in
+    """
+    model = GPT2(
+        num_ctx=num_ctx,
+        embedding_dim=1536,
+        N=36,
+        vocab_size=vocab_size,
+        num_head=12,
+        fused_residuals=False,
+        use_alibi=True,
+        **kwargs,
+    )
+
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
+
+        model.load_state_dict(state_dict)
+
+    return model
+
+def model_getter(model_name, vocab_size, num_ctx, model_checkpoint=None, **kwargs):
+    assert vocab_size > 0, "Vocab size must be positive"
+    assert num_ctx > 0, "Model context must be positive"
+
     MODELS_DICT = {
-        "qa": create_GPT2_qa,
-        "base": create_GPT2_base,
-        "medium": create_GPT2_medium,
-        "base*": create_GPT2_base_optimized,
-        "medium*": create_GPT2_medium_optimized,
-        "XL*": create_GPT2_XL_optimized,
+        "flax-test": create_GPT2_test,
+        "flax-distill": create_GPT2_flax,
+        "flax-large": create_GPT2_flax_large,
+        "flax-xlarge": create_GPT2_flax_xlarge,
+        "flax-xxlarge": create_GPT2_flax_xxlarge,
     }
 
-    return MODELS_DICT[model_name](vocab_size, num_ctx, **kwargs)
+    assert (
+        model_name in MODELS_DICT.keys()
+    ), f"Invalid model name provided. Must be one of {MODELS_DICT.keys()}"
+
+    return MODELS_DICT[model_name](vocab_size, num_ctx, model_checkpoint, **kwargs)
