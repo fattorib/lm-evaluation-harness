@@ -44,7 +44,7 @@ class GPTCustom(BaseLM):
         self.gpt = model_getter(
             model_size,
             vocab_size=50304,
-            num_ctx=1024, #Defaults to 2048 ctx, but this is flexible 
+            num_ctx=1024, #Defaults to 1024 ctx, but this is flexible thanks to ALiBi
         )
         state_dict = torch.load(
             model_weights_path,
