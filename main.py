@@ -63,8 +63,6 @@ def main():
 
     assert not args.provide_description  # not implemented
 
-    assert args.model == 'benlm', "Check model name"
-
     if args.limit:
         print(
             "WARNING: --limit SHOULD ONLY BE USED FOR TESTING. REAL METRICS SHOULD NOT BE COMPUTED USING LIMIT."
@@ -94,6 +92,8 @@ def main():
         description_dict=description_dict,
         decontamination_ngrams_path=args.decontamination_ngrams_path,
         check_integrity=args.check_integrity,
+        model_size = args.model_size,
+        checkpoint_path = args.checkpoint_path
     )
 
     dumped = json.dumps(results, indent=2)
