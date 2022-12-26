@@ -623,6 +623,6 @@ def model_getter(model_name, vocab_size, num_ctx, model_checkpoint=None, **kwarg
 
     assert (
         model_name in MODELS_DICT.keys()
-    ), f"Invalid model name provided. Must be one of {MODELS_DICT.keys()}"
+    ), f"Invalid model name provided. Expected be one of {MODELS_DICT.keys()}, but got {model_name}."
 
     return MODELS_DICT[model_name](vocab_size, num_ctx, model_checkpoint, **kwargs)
