@@ -127,7 +127,8 @@ class GPTCustom(BaseLM):
         logits returned from the model
         """
         with torch.no_grad():
-            return self.gpt(inps)[:, :, :50304]
+            with torch.cuda.amp.autocast():
+                return self.gpt(inps)[:, :, :50304]
 
     def _model_generate(self, context, max_length, eos_token_id):
         # return self.gpt.generate(
