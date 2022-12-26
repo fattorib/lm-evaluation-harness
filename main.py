@@ -92,6 +92,8 @@ def main():
         description_dict=description_dict,
         decontamination_ngrams_path=args.decontamination_ngrams_path,
         check_integrity=args.check_integrity,
+        model_size = args.model_size,
+        checkpoint_path = args.checkpoint_path
     )
 
     dumped = json.dumps(results, indent=2)
