@@ -1,6 +1,15 @@
 # Language Model Evaluation Harness Fork
 
-Fork of lm-eval harness for use with my models. 
+Fork of lm-eval harness for use with my models. Once model checkpoint is downloaded, can be run with:
+
+```bash 
+python main.py \
+	--model gpt_custom \
+	--tasks lambada,hellaswag \
+  --model-size flax-xlarge \
+  --checkpoint-path checkpoints/XL_params.pth
+
+```
 
 # Original Readme
 # Language Model Evaluation Harness
