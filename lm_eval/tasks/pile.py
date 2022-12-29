@@ -29,6 +29,7 @@ class PilePerplexityTask(PerplexityTask):
     VERSION = 1
     DATASET_PATH = inspect.getfile(lm_eval.datasets.pile.pile)
     DATASET_NAME = None
+    MAX_DOCS = 5000
 
     def has_validation_docs(self):
         return True
@@ -39,7 +40,7 @@ class PilePerplexityTask(PerplexityTask):
     def validation_docs(self):
         counter = 0 
         for doc in self.dataset["validation"]:
-            while counter < 1000:
+            while counter < self.MAX_DOCS:
                 counter += 1
                 yield doc["text"]
 
@@ -47,7 +48,7 @@ class PilePerplexityTask(PerplexityTask):
     def test_docs(self):
         counter = 0
         for doc in self.dataset["test"]:
-            while counter < 1000:
+            while counter < self.MAX_DOCS:
                 counter += 1
                 yield doc["text"]
 
