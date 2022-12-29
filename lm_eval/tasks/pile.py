@@ -37,12 +37,19 @@ class PilePerplexityTask(PerplexityTask):
         return True
 
     def validation_docs(self):
+        counter = 0 
         for doc in self.dataset["validation"]:
-            yield doc["text"]
+            while counter < 1000:
+                counter += 1
+                yield doc["text"]
+
 
     def test_docs(self):
+        counter = 0
         for doc in self.dataset["test"]:
-            yield doc["text"]
+            while counter < 1000:
+                counter += 1
+                yield doc["text"]
 
 
 class PileArxiv(PilePerplexityTask):
