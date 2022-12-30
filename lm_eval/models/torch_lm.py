@@ -128,6 +128,7 @@ class GPTCustom(BaseLM):
         """
         with torch.no_grad():
             with torch.cuda.amp.autocast():
+                print(inps.shape)
                 return self.gpt(inps)[:, :, :50304]
 
     def _model_generate(self, context, max_length, eos_token_id):
