@@ -44,6 +44,7 @@ def parse_args():
     # Additional Args
     parser.add_argument("--model-size", type=str, default=None)
     parser.add_argument("--checkpoint-path", type=str, default=None)
+    parser.add_argument("--eval-ctx", type=int, default=1024)
 
     return parser.parse_args()
 
@@ -94,6 +95,7 @@ def main():
         check_integrity=args.check_integrity,
         model_size = args.model_size,
         checkpoint_path = args.checkpoint_path
+        eval_ctx = args.eval_ctx
     )
 
     dumped = json.dumps(results, indent=2)

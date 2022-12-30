@@ -24,7 +24,8 @@ def simple_evaluate(
     check_integrity=False,
     decontamination_ngrams_path=None,
     model_size=None, 
-    checkpoint_path=None
+    checkpoint_path=None,
+    eval_ctx=None
 ):
 
     """Instantiate and evaluate a model on a list of tasks.
@@ -64,7 +65,7 @@ def simple_evaluate(
         if model_args is None:
             model_args = ""
         lm = lm_eval.models.get_model(model).create_from_arg_string(
-            model_args, {"batch_size": batch_size, "device": device, "model_size": model_size, "model_weights_path":checkpoint_path}
+            model_args, {"batch_size": batch_size, "device": device, "model_size": model_size, "model_weights_path":checkpoint_path, "eval_ctx": eval_ctx}
         )
     else:
         assert isinstance(model, lm_eval.base.LM)

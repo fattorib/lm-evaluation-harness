@@ -16,7 +16,8 @@ class GPTCustom(BaseLM):
         tokenizer=None,
         batch_size=1,
         model_size = None,
-        model_weights_path = None
+        model_weights_path = None,
+        eval_ctx = None
     ):
         super().__init__()
 
@@ -40,6 +41,7 @@ class GPTCustom(BaseLM):
 
         print(f"Model Size: {model_size}")
         print(f"Model Weights Path: {model_weights_path}")
+        print(f"Evaluation Context: {eval_ctx}")
 
         self.gpt = model_getter(
             model_size,
@@ -52,6 +54,8 @@ class GPTCustom(BaseLM):
             )
 
         self.gpt.load_state_dict(state_dict)
+
+        self.ctx = eval_ctx
 
         del state_dict
                 
@@ -91,12 +95,9 @@ class GPTCustom(BaseLM):
         return self.tokenizer.eos_token_id
 
     @property
-    def max_length(self):
-        try:
-            return 1024
-        except AttributeError:
-            # gptneoconfig doesn't have n_ctx apparently
-            return 1024
+    def max_length(self):  
+        return self.ctx
+
 
     @property
     def max_gen_toks(self):
