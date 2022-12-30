@@ -93,7 +93,7 @@ class GPTCustom(BaseLM):
     @property
     def max_length(self):
         try:
-            return 2048
+            return 1024
         except AttributeError:
             # gptneoconfig doesn't have n_ctx apparently
             return 1024
