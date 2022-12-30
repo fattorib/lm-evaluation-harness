@@ -29,7 +29,7 @@ class PilePerplexityTask(PerplexityTask):
     VERSION = 1
     DATASET_PATH = inspect.getfile(lm_eval.datasets.pile.pile)
     DATASET_NAME = None
-    MAX_DOCS = 5000
+    MAX_DOCS = 10000
 
     def has_validation_docs(self):
         return True
