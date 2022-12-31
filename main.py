@@ -94,7 +94,7 @@ def main():
         decontamination_ngrams_path=args.decontamination_ngrams_path,
         check_integrity=args.check_integrity,
         model_size = args.model_size,
-        checkpoint_path = args.checkpoint_path
+        checkpoint_path = args.checkpoint_path,
         eval_ctx = args.eval_ctx
     )
 
