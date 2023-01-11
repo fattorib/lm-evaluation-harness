@@ -13,9 +13,8 @@ class ByteTokenizer:
     def encode(self,text: str) -> bytes:
         # encode a string of text as a bytearray 
         # call byt5 tokenizer then shift outputs 
-
-        encoded = torch.tensor(self.sub_tokenizer(text).input_ids) - 3
-        return  encoded[:-1] if encoded.ndim == 1 else encoded[...,:-1]
+        encoded = torch.tensor(self.sub_tokenizer.encode(text)) - 3
+        return  list(encoded[:-1])
 
     def decode(self, tokens: List[int]) -> str:
         # decode a list of bytes to string 
@@ -28,8 +27,10 @@ if __name__ == '__main__':
 
     test = 'hey this is a test sentence!'
 
-    print(tokenizer(test))
+    out_tok = tokenizer.encode(test)
+
 
     enc = ByteTokenizer().encode(test) + 3
-
+    print(enc) 
+    print(out_tok)
     print(tokenizer.decode(enc))
