@@ -40,7 +40,7 @@ class GPTCustom(BaseLM):
                 else torch.device("cpu")
             )
 
-        assert model_size in ['bytes'] , "This branch only supports byte-level models! Switch to master for standard models"
+        assert model_size in ['flax-bytelevel'] , "This branch only supports byte-level models! Switch to master for standard models"
         print(f"Model Size: {model_size}")
         print(f"Model Weights Path: {model_weights_path}")
         print(f"Evaluation Context: {eval_ctx}")
@@ -48,7 +48,7 @@ class GPTCustom(BaseLM):
         self.gpt = model_getter(
             model_size,
             vocab_size=257,
-            num_ctx=2048
+            num_ctx=4096
         )
         state_dict = torch.load(
             model_weights_path,
