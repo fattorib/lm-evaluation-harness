@@ -19,7 +19,7 @@ class ByteTokenizer:
 
     def decode(self, tokens: List[int]) -> str:
         # decode a list of bytes to string 
-        return bytearray(tokens[0]).decode('utf-8')
+        return self.sub_tokenizer.decode(tokens + 3)
 
 
 if __name__ == '__main__':
@@ -30,4 +30,6 @@ if __name__ == '__main__':
 
     print(tokenizer(test))
 
-    print(ByteTokenizer().encode(test))
+    enc = ByteTokenizer().encode(test) + 3
+
+    print(tokenizer.decode(enc))
