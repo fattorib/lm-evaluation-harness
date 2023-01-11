@@ -15,7 +15,7 @@ class ByteTokenizer:
         # call byt5 tokenizer then shift outputs 
 
         encoded = torch.tensor(self.sub_tokenizer(text).input_ids) - 3
-        return {'input_ids': encoded[:-1]}
+        return  encoded[:-1] if encoded.ndims == 1 else encoded[...,:-1]
 
     def decode(self, tokens: List[int]) -> str:
         # decode a list of bytes to string 
