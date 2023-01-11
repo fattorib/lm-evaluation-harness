@@ -3,6 +3,7 @@ import torch
 from lm_eval.base import BaseLM
 from transformers import GPTNeoXTokenizerFast
 from lm_eval.models.gpt_pytorch import model_getter
+from lm_eval.models.custom_tokenizer import ByteTokenizer
 
 
 
@@ -39,14 +40,15 @@ class GPTCustom(BaseLM):
                 else torch.device("cpu")
             )
 
+        assert model_size in ['bytes'] , "This branch only supports byte-level models! Switch to master for standard models"
         print(f"Model Size: {model_size}")
         print(f"Model Weights Path: {model_weights_path}")
         print(f"Evaluation Context: {eval_ctx}")
 
         self.gpt = model_getter(
             model_size,
-            vocab_size=50304,
-            num_ctx=1024 if 'distill' not in model_size else 2048
+            vocab_size=257,
+            num_ctx=2048
         )
         state_dict = torch.load(
             model_weights_path,
@@ -62,16 +64,7 @@ class GPTCustom(BaseLM):
         self.gpt.to(self.device)        
         self.gpt.eval()
 
-        self.tokenizer = GPTNeoXTokenizerFast.from_pretrained("EleutherAI/gpt-neox-20b")
-
-        assert isinstance(
-            self.tokenizer,
-            (
-                transformers.GPT2Tokenizer,
-                transformers.GPT2TokenizerFast,
-                transformers.GPTNeoXTokenizerFast
-            ),
-        ), "this tokenizer has not been checked for compatibility yet!"
+        self.tokenizer = ByteTokenizer()
 
         self.vocab_size = self.tokenizer.vocab_size
 
@@ -114,7 +107,7 @@ class GPTCustom(BaseLM):
         return self._device
 
     def tok_encode(self, string: str):
-        return self.tokenizer.encode(string, add_special_tokens=False)
+        return self.tokenizer.encode(string)
 
     def tok_decode(self, tokens):
         return self.tokenizer.decode(tokens)
@@ -128,8 +121,8 @@ class GPTCustom(BaseLM):
         logits returned from the model
         """
         with torch.no_grad():
-            with torch.cuda.amp.autocast():
-                return self.gpt(inps)[:, :, :50304]
+            with torch.cuda.amp.autocast(cache_enabled = False):
+                return self.gpt(inps)[:, :, :self.vocab_size]
 
     def _model_generate(self, context, max_length, eos_token_id):
         # return self.gpt.generate(
