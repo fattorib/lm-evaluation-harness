@@ -63,7 +63,7 @@ class ChapterBreak(MultipleChoiceTask):
             # TODO: Return the test document generator from `self.dataset`.
             # In most case you can leave this as is unless the dataset split is
             # named differently than the default `"test"`.
-            return map(self._process_doc, self.dataset["test"])
+            return map(self._process_doc, self.dataset["train"]) #TODO: This is weird
 
     def _process_doc(self, doc):
         # TODO: Process the documents into a dictionary with the following keys:
