@@ -5,9 +5,10 @@ Fork of lm-eval harness for use with my models. Once model checkpoint is downloa
 ```bash 
 python main.py \
 	--model gpt_custom \
-	--tasks lambada_openai \
-  --model-size flax-distill \
-  --checkpoint-path checkpoints/trained_models_gpt_smol.pth
+	--tasks chapterbreak \
+    --model-size flax-large \
+    --checkpoint-path checkpoints/gpt_large.pth \
+    --no_cache
 ```
 
 # Original Readme
