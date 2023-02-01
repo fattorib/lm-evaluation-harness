@@ -134,7 +134,7 @@ class ALiBi(nn.Module):
         def get_slopes_power_of_2(n):
             start = 2 ** (-(2 ** -(math.log2(n) - 3)))
             ratio = start
-            return [start * ratio ** i for i in range(n)]
+            return [start * ratio**i for i in range(n)]
 
         if math.log2(n).is_integer():
             return get_slopes_power_of_2(n)
@@ -487,10 +487,36 @@ def create_GPT2_test(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     """
     model = GPT2(
         num_ctx=num_ctx,
-        embedding_dim=128,
+        embedding_dim=64,
         N=2,
         vocab_size=vocab_size,
-        num_head=8,
+        num_head=4,
+        fused_residuals=False,
+        use_alibi=True,
+        **kwargs,
+    )
+
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
+
+        model.load_state_dict(state_dict)
+
+    return model
+
+
+def create_GPT2_bytelevel(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
+    """
+    TODO: Fill this in
+    """
+    model = GPT2(
+        num_ctx=num_ctx,
+        embedding_dim=1024,
+        N=10,
+        vocab_size=257,
+        num_head=16,
         fused_residuals=False,
         use_alibi=True,
         **kwargs,
@@ -584,6 +610,7 @@ def create_GPT2_flax_xlarge(vocab_size, num_ctx, model_checkpoint=None, **kwargs
 
     return model
 
+
 def create_GPT2_flax_xxlarge(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     """
     TODO: Fill this in
@@ -609,6 +636,31 @@ def create_GPT2_flax_xxlarge(vocab_size, num_ctx, model_checkpoint=None, **kwarg
 
     return model
 
+def create_GPT2_flax_small(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
+    """
+    TODO: Fill this in
+    """
+    model = GPT2(
+        num_ctx=num_ctx,
+        embedding_dim=768,
+        N=8,
+        vocab_size=vocab_size,
+        num_head=8,
+        fused_residuals=False,
+        use_alibi=True,
+        **kwargs,
+    )
+
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
+
+        model.load_state_dict(state_dict)
+
+    return model
+
 def model_getter(model_name, vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     assert vocab_size > 0, "Vocab size must be positive"
     assert num_ctx > 0, "Model context must be positive"
@@ -619,10 +671,12 @@ def model_getter(model_name, vocab_size, num_ctx, model_checkpoint=None, **kwarg
         "flax-large": create_GPT2_flax_large,
         "flax-xlarge": create_GPT2_flax_xlarge,
         "flax-xxlarge": create_GPT2_flax_xxlarge,
+        "flax-bytelevel": create_GPT2_bytelevel,
+        "flax-small": create_GPT2_flax_small,
     }
 
     assert (
         model_name in MODELS_DICT.keys()
-    ), f"Invalid model name provided. Expected be one of {MODELS_DICT.keys()}, but got {model_name}."
+    ), f"Invalid model name provided. Must be one of {MODELS_DICT.keys()}"
 
     return MODELS_DICT[model_name](vocab_size, num_ctx, model_checkpoint, **kwargs)
