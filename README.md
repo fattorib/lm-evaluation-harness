@@ -5,7 +5,7 @@ Fork of lm-eval harness for use with my models. Once model checkpoint is downloa
 ```bash 
 python main.py \
 	--model gpt_custom \
-	--tasks wikitext \
+	--tasks wikitext,lambada_openai \
     --model-size flax-small \
     --checkpoint-path checkpoints/tpu_gpt2_small.pth \
     --no_cache
