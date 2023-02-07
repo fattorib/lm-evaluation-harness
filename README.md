@@ -8,8 +8,23 @@ python main.py \
 	--tasks wikitext,lambada_openai \
     --model-size flax-small \
     --checkpoint-path checkpoints/tpu_gpt2_small.pth \
-    --no_cache
+    --no_cache 
 ```
+
+all_pile:
+pile_arxiv,pile_bookcorpus2,pile_books3,pile_dm-mathematics,pile_enron,pile_europarl,pile_freelaw,pile_github,pile_gutenberg,pile_hackernews,pile_nih-exporter,pile_opensubtitles,pile_openwebtext2,pile_philpapers,pile_pile-cc,pile_pubmed-abstracts,pile_pubmed-central,pile_stackexchange,pile_ubuntu-irc,pile_uspto,pile_wikipedia,pile_youtubesubtitles
+
+```bash
+python main.py \
+	--model gpt_custom \
+	--tasks pile_pile-cc,pile_openwebtext2\
+    --model-size flax-small \
+    --checkpoint-path checkpoints/tpu_gpt2_small.pth \
+    --no_cache \
+    --eval-ctx 2048 \
+    --limit 50
+```
+
 
 # Original Readme
 # Language Model Evaluation Harness
@@ -75,7 +90,7 @@ python main.py \
     --tasks lambada_openai,hellaswag
 ```
 
-And if you want to verify the data integrity of the tasks you're performing in addition to running the tasks themselves, you can use the `--check_integrity` flag:
+And if you want to verify the data integrity of the tasks youre performing in addition to running the tasks themselves, you can use the `--check_integrity` flag:
 
 ```bash
 python main.py \
