@@ -368,7 +368,7 @@ class GPT2(nn.Module):
             self.head_k = nn.Linear(self.embedding_dim, 256, bias=False)
 
             self.register_buffer("copy_mask", torch.tril(
-                torch.ones(self.num_ctx, self.num_ctx)))
+                torch.ones(self.num_ctx, self.num_ctx, dtype = torch.uint8)))
 
 
 
