@@ -57,6 +57,11 @@ class GPTCustom(BaseLM):
 
         self.ctx = eval_ctx
 
+        if self.gpt.head_qk_trick:
+            del self.gpt.copy_mask
+            self.gpt.register_buffer("copy_mask", torch.tril(
+                torch.ones(self.ctx, self.ctx)))
+
         del state_dict
                 
         self.gpt.to(self.device)        
