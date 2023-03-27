@@ -713,7 +713,7 @@ def create_GPT2_flax_med(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     """
     model = GPT2(
         num_ctx=num_ctx,
-        embedding_dim=2048,
+        embedding_dim=1536,
         N=12,
         vocab_size=vocab_size,
         num_head=12,
