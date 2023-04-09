@@ -630,6 +630,31 @@ def create_GPT2_flax_xlarge(vocab_size, num_ctx, model_checkpoint=None, **kwargs
 
     return model
 
+def create_GPT2_flax_xlarge2(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
+    """
+    TODO: Fill this in
+    """
+    model = GPT2(
+        num_ctx=num_ctx,
+        embedding_dim=1536,
+        N=24,
+        vocab_size=vocab_size,
+        num_head=16,
+        fused_residuals=False,
+        use_alibi=True,
+        **kwargs,
+    )
+
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
+
+        model.load_state_dict(state_dict)
+
+    return model
+
 
 def create_GPT2_flax_xxlarge(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     """
@@ -746,6 +771,7 @@ def model_getter(model_name, vocab_size, num_ctx, model_checkpoint=None, **kwarg
         "flax-small": create_GPT2_flax_small,
         "flax-gopher": create_GPT2_flax_gopher, #matches size of gopher 1.4B/GPT 1.3B/GPT-Neo 1.3B
         "flax-417M": create_GPT2_flax_med, #matches size of gopher 1.4B/GPT 1.3B/GPT-Neo 1.3B
+        "flax-760m": create_GPT2_flax_xlarge2,
     }
 
     assert (
