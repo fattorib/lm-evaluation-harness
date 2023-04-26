@@ -57,6 +57,9 @@ class GPTCustom(BaseLM):
 
         self.ctx = eval_ctx
 
+        self.gpt.half()
+        torch.cuda.empty_cache()
+
         if self.gpt.head_qk_trick:
             del self.gpt.copy_mask
             self.gpt.register_buffer("copy_mask", torch.tril(
@@ -133,8 +136,7 @@ class GPTCustom(BaseLM):
         logits returned from the model
         """
         with torch.no_grad():
-            with torch.cuda.amp.autocast():
-                return self.gpt(inps)[:, :, :50304]
+            return self.gpt(inps)[:, :, :50304]
 
     def _model_generate(self, context, max_length, eos_token_id):
         # return self.gpt.generate(
