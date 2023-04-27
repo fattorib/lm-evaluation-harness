@@ -3,5 +3,5 @@ env
 data/
 lm_cache
 .idea
-*.pth
+*.pth*
 lm_eval.egg-info
