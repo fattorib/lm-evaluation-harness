@@ -350,7 +350,7 @@ class BaseLM(LM):
         for context, until in tqdm(re_ord.get_reordered()):
             if isinstance(until, str):
                 until = [until]
-
+            print(self.tok_encode(until[0]))
             (primary_until,) = self.tok_encode(until[0])
 
             context_enc = torch.tensor(
