@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from einops import rearrange
+
 """
 Module class for GPT2. Follows paper specifications wherever possible.
 Certain sections of code are copied from the following repos:
@@ -154,15 +156,21 @@ class ALiBi(nn.Module):
         layer_past: Tuple[torch.Tensor, torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         B, T, C = x.size()
-        k = (
-            self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
-        )  # (B, nh, T, hs)
-        q = (
-            self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
-        )  # (B, nh, T, hs)
-        v = (
-            self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
-        )  # (B, nh, T, hs)
+
+        k,q,v = self.key(x), self.query(x), self.value(x)
+        k = rearrange(
+            k, "b t (nh hd) -> b t nh hd", nh=self.n_head, hd=C // self.n_head
+        )
+        q = rearrange(
+            q, "b t (nh hd) -> b t nh hd", nh=self.n_head, hd=C // self.n_head
+        )
+        v = rearrange(
+            v, "b t (nh hd) -> b t nh hd", nh=self.n_head, hd=C // self.n_head
+        )
+
+        k = rearrange(k, "b t n c -> b n t c")
+        v = rearrange(v, "b t n c -> b n t c")
+        q = rearrange(q, "b t n c -> b n t c")
 
         present = None
         if use_cache:
@@ -175,8 +183,10 @@ class ALiBi(nn.Module):
 
         # Need to grab these
         seq_len_k, seq_len_q = k.size(-2), q.size(-2)
+
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+
+        att = (q @ rearrange(k, "b n t c -> b n c t")) * (1.0 / math.sqrt(k.size(-1)))
 
         # Creation of ALiBi distance matrix -> Computed on first forward pass
         # and stored. If CTX changes, we update this
@@ -198,6 +208,7 @@ class ALiBi(nn.Module):
 
             self.alibi_cache = a * self.slopes.view(self.slopes.shape[0], 1, 1)
             self.cached_ctx = seq_len_k
+            self.alibi_cache = self.alibi_cache.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
 
         if seq_len_k != seq_len_q:
             assert (
@@ -221,20 +232,20 @@ class ALiBi(nn.Module):
             a = a * self.slopes.view(self.slopes.shape[0], 1, 1)
 
             self.alibi_cache = a[:, seq_len_k - 1, :].view(a.shape[0], 1, a.shape[2])
+            self.alibi_cache = self.alibi_cache.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
 
         att = att + self.alibi_cache
 
-        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
+        # att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
         att = F.softmax(att, dim=-1)
         y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         y = (
-            y.transpose(1, 2).contiguous().view(B, T, C)
+            rearrange(y, "b n c t -> b c n t").contiguous().view(B, T, C)
         )  # re-assemble all head outputs side by side
 
         # output projection
         y = self.resid_drop(self.fc_resid(y))
         return y, present
-
 
 class GPT2Block(nn.Module):
     """
