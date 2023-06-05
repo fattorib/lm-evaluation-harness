@@ -310,6 +310,7 @@ class GPT2(nn.Module):
         resid_dropout: float = 0.0,
         embedding_dropout: float = 0.0,
         use_alibi: bool = False,
+        tied_embeddings: bool = False
     ):
         super().__init__()
         self.num_ctx = num_ctx
@@ -359,7 +360,8 @@ class GPT2(nn.Module):
         )
 
         # Tying embedding weights
-        self.lm_head.weight = self.wte.weight
+        if tied_embeddings:
+            self.lm_head.weight = self.wte.weight
 
         self.apply(_embedding_init)
 
@@ -637,6 +639,31 @@ def create_GPT2_flax_xxlarge(vocab_size, num_ctx, model_checkpoint=None, **kwarg
     return model
 
 
+def create_GPT2_XXL(vocab_size, num_ctx, model_checkpoint=None, **kwargs):
+    """
+    TODO: Fill this in
+    """
+    model = GPT2(
+        num_ctx=num_ctx,
+        embedding_dim=5120,
+        N=7,
+        vocab_size=vocab_size,
+        num_head=40,
+        fused_residuals=True,
+        use_alibi=True,
+        **kwargs,
+    )
+
+    if model_checkpoint is not None:
+        state_dict = torch.load(
+            model_checkpoint,
+            map_location="cpu",
+        )
+
+        model.load_state_dict(state_dict)
+
+    return model
+
 def model_getter(model_name, vocab_size, num_ctx, model_checkpoint=None, **kwargs):
     assert vocab_size > 0, "Vocab size must be positive"
     assert num_ctx > 0, "Model context must be positive"
@@ -648,6 +675,7 @@ def model_getter(model_name, vocab_size, num_ctx, model_checkpoint=None, **kwarg
         "flax-xlarge": create_GPT2_flax_xlarge,
         "flax-xxlarge": create_GPT2_flax_xxlarge,
         "flax-bytelevel": create_GPT2_bytelevel,
+        "flax-2_7b": create_GPT2_XXL,
     }
 
     assert (
