@@ -45,7 +45,6 @@ class GPTCustom(BaseLM):
 
         self.gpt = model_getter(
             model_size,
-            num_ctx=1024 if 'distill' not in model_size else 2048
         )
         state_dict = torch.load(
             model_weights_path,
