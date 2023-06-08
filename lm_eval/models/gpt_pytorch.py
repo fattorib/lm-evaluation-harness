@@ -261,7 +261,7 @@ class GPT2Block(nn.Module):
         block_size: int,
         resid_dropout: float,
         num_layers: int,
-        parallel_residual: bool = True,
+        parallel_residual: bool = False,
     ) -> None:
         super().__init__()
 
@@ -463,7 +463,7 @@ class GPT2(nn.Module):
 
 def model_getter(
     model_size: str,
-    config_path: str = "lm_eval/models/model_config.yaml",
+    config_path: str = "torch_compatability/model_config.yaml",
     model_checkpoint: str = None,
 ) -> nn.Module:
     """Loads model configuration from YAML files

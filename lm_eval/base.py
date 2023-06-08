@@ -238,7 +238,6 @@ class BaseLM(LM):
         
         _, context_enc, continuation_enc = re_ord.get_reordered()[0]
         max_context = len((context_enc + continuation_enc)[-(self.max_length + 1) :][:-1])
-        print(f"Maximum Data Context: {max_context}")
 
         for chunk in utils.chunks(
             tqdm(re_ord.get_reordered(), disable=disable_tqdm), self.batch_size

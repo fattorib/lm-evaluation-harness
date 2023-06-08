@@ -39,3 +39,18 @@ distill:
   num_head: 40
   num_ctx: 1024
   N: 6
+
+base:
+  embedding_dim: 768
+  vocab_size: 50304
+  num_head: 12
+  num_ctx: 2048
+  N: 12
+
+medium:
+embedding_dim: 1024
+vocab_size: 50304
+num_head: 16
+num_ctx: 1024
+dropout: 0.0
+N: 24
