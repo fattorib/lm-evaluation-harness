@@ -5,10 +5,12 @@ Fork of lm-eval harness for use with my models. Once model checkpoint is downloa
 ```bash 
 python main.py \
 	--model gpt_custom \
-	--tasks chapterbreak \
-    --model-size flax-417M \
-    --checkpoint-path /home/benjamin/Desktop/ML/transformer/checkpoints/torchv2/417m.pth \
-    --no_cache 
+	--tasks lambada_openai,wikitext,winogrande \
+    --model-size base \
+    --checkpoint-path checkpoints/base_8_4.pth \
+    --no_cache \
+    --eval-ctx 1024 \
+    --batch_size 4 
 ```
 
 all_pile:

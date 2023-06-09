@@ -48,9 +48,8 @@ base:
   N: 12
 
 medium:
-embedding_dim: 1024
-vocab_size: 50304
-num_head: 16
-num_ctx: 1024
-dropout: 0.0
-N: 24
+  embedding_dim: 1024
+  vocab_size: 50304
+  num_head: 16
+  num_ctx: 1024
+  N: 24
