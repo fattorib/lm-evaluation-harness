@@ -53,3 +53,10 @@ medium:
   num_head: 16
   num_ctx: 1024
   N: 24
+
+1_6b:
+  embedding_dim: 2560
+  vocab_size: 50304
+  num_head: 32
+  num_ctx: 1024
+  N: 18
