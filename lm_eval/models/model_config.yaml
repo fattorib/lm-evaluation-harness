@@ -46,6 +46,7 @@ base:
   num_head: 12
   num_ctx: 2048
   N: 12
+  parallel_residual: True
 
 medium:
   embedding_dim: 1024

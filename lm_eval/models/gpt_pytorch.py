@@ -319,7 +319,8 @@ class GPT2(nn.Module):
         mlp_dropout: float = 0.0,
         resid_dropout: float = 0.0,
         embedding_dropout: float = 0.0,
-        tied_embeddings: bool = False
+        tied_embeddings: bool = False,
+        parallel_residual: bool = False
     ):
         super().__init__()
         self.num_ctx = num_ctx
@@ -348,6 +349,7 @@ class GPT2(nn.Module):
                         block_size=self.num_ctx,
                         resid_dropout=resid_dropout,
                         num_layers=N,
+                        parallel_residual=parallel_residual
                     )
                 )
                 for i in range(self.N)
@@ -463,7 +465,7 @@ class GPT2(nn.Module):
 
 def model_getter(
     model_size: str,
-    config_path: str = "lm_eval/models/model_config.yaml",
+    config_path: str = "lm_evals/models/model_config.yaml",
     model_checkpoint: str = None,
 ) -> nn.Module:
     """Loads model configuration from YAML files
