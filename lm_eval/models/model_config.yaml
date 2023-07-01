@@ -40,6 +40,15 @@ distill:
   num_ctx: 1024
   N: 6
 
+2_8b:
+  embedding_dim: 4096
+  vocab_size: 50304
+  num_head: 16
+  num_ctx: 1024
+  N: 12
+  parallel_residual: True
+
+
 base:
   embedding_dim: 768
   vocab_size: 50304
