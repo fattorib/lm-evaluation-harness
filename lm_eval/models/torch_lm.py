@@ -55,7 +55,7 @@ class GPTCustom(BaseLM):
 
         self.ctx = eval_ctx
 
-        self.gpt.half()
+        self.gpt.bfloat16()
         torch.cuda.empty_cache()
 
         del state_dict
