@@ -236,14 +236,27 @@ class ALiBi(nn.Module):
                 self.mask[:, :, :T, :T] == 0, float("-inf")
             )
 
-        y = nn.functional.scaled_dot_product_attention(q, k, v, self.alibi_cache)
+        # y = nn.functional.scaled_dot_product_attention(q, k, v, self.alibi_cache)
 
+        # y = (
+        #     rearrange(y, "b n t h -> b t n h").contiguous().view(B, T, C)
+        # )  # re-assemble all head outputs side by side
+
+        # # output projection
+        # y = self.resid_drop(self.fc_resid(y))
+        # return y, present
+
+        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+
+        att = att + self.alibi_cache
+        att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
+        att = F.softmax(att, dim=-1, dtype = torch.float32)
+        y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         y = (
-            rearrange(y, "b n t h -> b t n h").contiguous().view(B, T, C)
+            y.transpose(1, 2).contiguous().view(B, T, C)
         )  # re-assemble all head outputs side by side
 
-        # output projection
-        y = self.resid_drop(self.fc_resid(y))
         return y, present
 
 
