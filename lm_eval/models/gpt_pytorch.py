@@ -256,7 +256,7 @@ class ALiBi(nn.Module):
         y = (
             y.transpose(1, 2).contiguous().view(B, T, C)
         )  # re-assemble all head outputs side by side
-
+        y = self.resid_drop(self.fc_resid(y))
         return y, present
 
 
