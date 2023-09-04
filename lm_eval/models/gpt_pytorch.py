@@ -251,7 +251,7 @@ class ALiBi(nn.Module):
 
         att = att + self.alibi_cache
         att = att.masked_fill(self.mask[:, :, :T, :T] == 0, float("-inf"))
-        att = F.softmax(att, dim=-1, dtype = torch.float32)
+        att = F.softmax(att, dim=-1, dtype = torch.float32).to(torch.bfloat16)
         y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         y = (
             y.transpose(1, 2).contiguous().view(B, T, C)
