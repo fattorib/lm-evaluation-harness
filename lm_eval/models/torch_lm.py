@@ -2,7 +2,7 @@ import transformers
 import torch
 from lm_eval.base import BaseLM
 from transformers import GPTNeoXTokenizerFast
-from lm_eval.models.gpt_pytorch import model_getter
+from lm_eval.models.stable_lm import StableLMEpochModel, STABLE_125M
 
 
 
@@ -43,15 +43,14 @@ class GPTCustom(BaseLM):
         print(f"Model Weights Path: {model_weights_path}")
         print(f"Evaluation Context: {eval_ctx}")
 
-        self.gpt = model_getter(
-            model_size,
-        )
+        self.gpt = StableLMEpochModel(STABLE_125M)
+
         state_dict = torch.load(
             model_weights_path,
             map_location="cpu",
             )
 
-        self.gpt.load_state_dict(state_dict)
+        self.gpt.load_state_dict(state_dict["model_state_dict"])
 
         self.ctx = eval_ctx
 
