@@ -1,16 +1,17 @@
-""" PyTorch StableLM Epoch model. """
+import math
 from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from einops import rearrange
+from flash_attn import flash_attn_func
 
 from .kv_cache import KVCache
-
 from dataclasses import dataclass
 
 @dataclass
-class StableLMConfig:
+class GPTConfig:
     vocab_size: int
     hidden_size: int
     intermediate_size: int
@@ -21,37 +22,24 @@ class StableLMConfig:
     norm_eps: float
     rope_pct: float
     rope_theta: int
+    dropout: float = 0.0
+    feature_dim: int = None
+    use_rope: bool = False
 
 
-STABLE_125M = StableLMConfig(
+GPT_125M = GPTConfig(
     vocab_size=50304,
     hidden_size=768,
     intermediate_size=2048,
-    max_position_embeddings=1024,
+    max_position_embeddings=2048,
     num_attention_heads=12,
     num_key_value_heads=12,
     num_hidden_layers=12,
     norm_eps=1e-05,
-    rope_pct=0.25,
+    rope_pct=1.00,
     rope_theta=10000,
+    use_rope=True,
 )
-
-
-class EmbeddingNoInit(nn.Embedding):
-    def reset_parameters(self):
-        pass
-
-
-class LayerNormNoInit(nn.LayerNorm):
-    def reset_parameters(self):
-        pass
-
-
-class LinearNoInit(nn.Linear):
-    def reset_parameters(self):
-        pass
-
-
 class RotaryEmbedding(nn.Module):
     def __init__(
         self,
@@ -129,18 +117,18 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids):
 
 
 class MLP(nn.Module):
-    def __init__(self, config: StableLMConfig):
+    def __init__(self, config: GPTConfig):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.gate_proj = LinearNoInit(
+        self.gate_proj = nn.Linear(
             config.hidden_size, config.intermediate_size, bias=False
         )
-        self.up_proj = LinearNoInit(
+        self.up_proj = nn.Linear(
             config.hidden_size, config.intermediate_size, bias=False
         )
-        self.down_proj = LinearNoInit(
+        self.down_proj = nn.Linear(
             config.intermediate_size, config.hidden_size, bias=False
         )
         self.act_fn = nn.SiLU()
@@ -149,22 +137,8 @@ class MLP(nn.Module):
         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
 
-def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
-    """
-    This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
-    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
-    """
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
-    if n_rep == 1:
-        return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(
-        batch, num_key_value_heads, n_rep, slen, head_dim
-    )
-    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
-
-
 class Attention(nn.Module):
-    def __init__(self, config: StableLMConfig, use_cache: bool = False):
+    def __init__(self, config: GPTConfig, use_cache: bool = False):
         super().__init__()
         self.config = config
         self.use_cache = use_cache
@@ -175,19 +149,17 @@ class Attention(nn.Module):
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.max_position_embeddings = config.max_position_embeddings
 
-        self.q_proj = LinearNoInit(
-            self.hidden_size, self.num_heads * self.head_dim, bias=False
-        )
-        self.k_proj = LinearNoInit(
-            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
-        )
-        self.v_proj = LinearNoInit(
-            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False
+        self.qkv_proj = nn.Linear(
+            self.hidden_size, 3 * self.num_heads * self.head_dim, bias=False
         )
 
-        self.o_proj = LinearNoInit(self.hidden_size, self.hidden_size, bias=False)
+        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
 
-        self._init_rope()
+        self.use_rope = False
+        if config.use_rope:
+            print(f"Using RoPE")
+            self._init_rope()
+            self.use_rope = True
 
     def _init_rope(self):
         self.rotary_ndims = int(self.head_dim * self.config.rope_pct)
@@ -200,7 +172,6 @@ class Attention(nn.Module):
     def forward(
         self,
         hidden_states: torch.FloatTensor,
-        attention_mask: torch.FloatTensor,
         position_ids: torch.LongTensor,
         layer_past: KVCache = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
@@ -208,43 +179,49 @@ class Attention(nn.Module):
 
         has_layer_past = layer_past is not None and layer_past.current_kv_size > 0
 
-        # TODO: Leaving a bit of performance on table (1-2%) by not fusing QKV matmul
+        qkv_states = self.qkv_proj(hidden_states)
+
+        query_states, key_states, value_states = torch.chunk(
+            qkv_states, chunks=3, dim=-1
+        )
+
         query_states = rearrange(
-            self.q_proj(hidden_states),
+            query_states,
             "b s (nh hd) -> b nh s hd",
             nh=self.num_heads,
             hd=self.head_dim,
         )
         key_states = rearrange(
-            self.k_proj(hidden_states),
+            key_states,
             "b s (nh hd) -> b nh s hd",
             nh=self.num_heads,
             hd=self.head_dim,
         )
         value_states = rearrange(
-            self.v_proj(hidden_states),
+            value_states,
             "b s (nh hd) -> b nh s hd",
             nh=self.num_heads,
             hd=self.head_dim,
         )
 
-        query_rot = query_states[..., : self.rotary_ndims]
-        query_pass = query_states[..., self.rotary_ndims :]
-        key_rot = key_states[..., : self.rotary_ndims]
-        key_pass = key_states[..., self.rotary_ndims :]
+        if self.use_rope:
+            query_rot = query_states[..., : self.rotary_ndims]
+            query_pass = query_states[..., self.rotary_ndims :]
+            key_rot = key_states[..., : self.rotary_ndims]
+            key_pass = key_states[..., self.rotary_ndims :]
 
-        kv_seq_len = key_states.shape[-2]
-        if has_layer_past:
-            kv_seq_len += layer_past.current_kv_size
+            kv_seq_len = key_states.shape[-2]
+            if has_layer_past:
+                kv_seq_len += layer_past.current_kv_size
 
-        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-        query_states, key_states = apply_rotary_pos_emb(
-            query_rot, key_rot, cos, sin, position_ids
-        )
+            cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+            query_states, key_states = apply_rotary_pos_emb(
+                query_rot, key_rot, cos, sin, position_ids
+            )
 
-        # [batch_size, num_heads, seq_len, head_dim]
-        query_states = torch.cat((query_states, query_pass), dim=-1)
-        key_states = torch.cat((key_states, key_pass), dim=-1)
+            # [batch_size, num_heads, seq_len, head_dim]
+            query_states = torch.cat((query_states, query_pass), dim=-1)
+            key_states = torch.cat((key_states, key_pass), dim=-1)
 
         if self.use_cache:
             if has_layer_past:  # kv length is > 0
@@ -267,16 +244,18 @@ class Attention(nn.Module):
                     query_states, key_states, value_states, is_causal=True
                 )
 
+            # attn_output = flash_attn_func(query_states, key_states, value_states)
+
         else:
             import math
 
-            # TODO: SDPA doesn't work with naive KV Cache
+            # Note: SDPA doesn't work with naive KV Cache
             attn_weights = torch.matmul(
                 query_states, key_states.transpose(2, 3)
             ) / math.sqrt(self.head_dim)
-            attn_weights = nn.functional.softmax(
-                attn_weights, dim=-1, dtype=torch.float32
-            ).to(query_states.dtype)
+            attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).to(
+                query_states.dtype
+            )
             attn_output = torch.matmul(attn_weights, value_states)
 
         # Merge heads
@@ -290,43 +269,42 @@ class Attention(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, config: StableLMConfig, use_cache: bool = False):
+    def __init__(self, config: GPTConfig, use_cache: bool = False):
         super().__init__()
         self.use_cache = use_cache
+
         self.self_attn = Attention(config, use_cache)
+
         self.mlp = MLP(config)
-        self.input_layernorm = LayerNormNoInit(config.hidden_size, eps=config.norm_eps)
-        self.post_attention_layernorm = LayerNormNoInit(
+
+        self.input_layernorm = nn.LayerNorm(config.hidden_size, eps=config.norm_eps)
+        self.post_attention_layernorm = nn.LayerNorm(
             config.hidden_size, eps=config.norm_eps
         )
 
-        self.dropout_1 = nn.Dropout(p=0.1)
+        self.dropout_1 = nn.Dropout(p=config.dropout)
 
-        self.dropout_2 = nn.Dropout(p=0.1)
+        self.dropout_2 = nn.Dropout(p=config.dropout)
 
     def forward(
         self,
         hidden_states: Optional[torch.FloatTensor],
-        attention_mask: Optional[torch.FloatTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         layer_past=None,
     ) -> Union[
         Tuple[torch.Tensor],
         Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]],
     ]:
+        # # Self Attention
         residual = hidden_states
-
         hidden_states = self.input_layernorm(hidden_states)
-
-        # Self Attention
         hidden_states, kv_cache = self.self_attn(
+            # hidden_states = self.self_attn(
             hidden_states=hidden_states,
-            attention_mask=attention_mask,
             position_ids=position_ids,
             layer_past=layer_past,
         )
         hidden_states = self.dropout_1(hidden_states)
-
         hidden_states = residual + hidden_states
 
         # Fully Connected
@@ -339,18 +317,27 @@ class DecoderLayer(nn.Module):
         return hidden_states, kv_cache
 
 
-class StableLMEpochModel(nn.Module):
-    def __init__(self, config: StableLMConfig, use_cache=False):
+class GPTModel(nn.Module):
+    def __init__(self, config: GPTConfig, use_cache=False):
         super().__init__()
         self.config = config
         self.use_cache = use_cache
-        self.embed_tokens = EmbeddingNoInit(config.vocab_size, config.hidden_size)
-        self.layers = nn.ModuleList(
-            [DecoderLayer(config, use_cache) for _ in range(config.num_hidden_layers)]
-        )
-        self.norm = LayerNormNoInit(config.hidden_size, eps=config.norm_eps)
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
 
-        self.lm_head = LinearNoInit(config.hidden_size, config.vocab_size, bias=False)
+        self.layers = nn.ModuleList(
+            [DecoderLayer(config, use_cache) for i in range(config.num_hidden_layers)]
+        )
+
+        self.norm = nn.LayerNorm(config.hidden_size, eps=config.norm_eps)
+
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        if not self.config.use_rope:
+            print("Using learned position embeddings.")
+            self.embed_positions = nn.Embedding(
+                num_embeddings=config.max_position_embeddings,
+                embedding_dim=config.hidden_size,
+            )
 
         self.apply(self._init_weights)
 
@@ -358,15 +345,15 @@ class StableLMEpochModel(nn.Module):
 
     def _init_weights(self, module: nn.Module):
         """Initialize the weights"""
-        if isinstance(module, LinearNoInit):
+        if isinstance(module, nn.Linear):
             module.weight.data.normal_(mean=0.0, std=0.02)
             if module.bias is not None:
                 module.bias.data.zero_()
-        elif isinstance(module, EmbeddingNoInit):
+        elif isinstance(module, nn.Embedding):
             module.weight.data.normal_(mean=0.0, std=0.02)
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
-        elif isinstance(module, LayerNormNoInit):
+        elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
 
@@ -374,7 +361,6 @@ class StableLMEpochModel(nn.Module):
         self,
         input_ids: Optional[torch.LongTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.FloatTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         layer_past: List[KVCache] = None,
     ):
@@ -407,14 +393,16 @@ class StableLMEpochModel(nn.Module):
 
         inputs_embeds = self.embed_tokens(input_ids)
 
-        attention_mask = None
+        if not self.config.use_rope:
+            pos_embeds = self.embed_positions(position_ids)
+            hidden_states = inputs_embeds + pos_embeds
 
-        hidden_states = inputs_embeds
+        else:
+            hidden_states = inputs_embeds
 
         for idx, decoder_layer in enumerate(self.layers):
             hidden_states, kv_cache = decoder_layer(
                 hidden_states,
-                attention_mask=attention_mask,
                 position_ids=position_ids,
                 layer_past=layer_past[idx],
             )
@@ -430,12 +418,10 @@ class StableLMEpochModel(nn.Module):
 
         else:
             if labels is not None:
-                # Shift so that tokens < n predict n
                 shift_logits = logits[..., :-1, :].contiguous()
 
                 shift_labels = labels[..., 1:].contiguous()
 
-                # Flatten the tokens
                 loss_fct = torch.nn.CrossEntropyLoss()
                 loss = loss_fct(
                     shift_logits.view(-1, shift_logits.size(-1)),

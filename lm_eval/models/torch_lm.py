@@ -2,7 +2,7 @@ import transformers
 import torch
 from lm_eval.base import BaseLM
 from transformers import GPTNeoXTokenizerFast
-from lm_eval.models.stable_lm import StableLMEpochModel, STABLE_125M
+from lm_eval.models.gpt2_retrain import GPTModel, GPT_125M
 
 
 
@@ -43,7 +43,7 @@ class GPTCustom(BaseLM):
         print(f"Model Weights Path: {model_weights_path}")
         print(f"Evaluation Context: {eval_ctx}")
 
-        self.gpt = StableLMEpochModel(STABLE_125M)
+        self.gpt = GPTModel(GPT_125M)
 
         state_dict = torch.load(
             model_weights_path,
@@ -63,27 +63,6 @@ class GPTCustom(BaseLM):
         self.gpt.eval()
 
         self.tokenizer = GPTNeoXTokenizerFast.from_pretrained("EleutherAI/gpt-neox-20b")
-
-        assert isinstance(
-            self.tokenizer,
-            (
-                transformers.GPT2Tokenizer,
-                transformers.GPT2TokenizerFast,
-                transformers.GPTNeoXTokenizerFast
-            ),
-        ), "this tokenizer has not been checked for compatibility yet!"
-
-        self.vocab_size = self.tokenizer.vocab_size
-
-        if isinstance(
-            self.tokenizer, (transformers.GPT2Tokenizer, transformers.GPT2TokenizerFast)
-        ):
-            assert self.tokenizer.encode("hello\n\nhello") == [
-                31373,
-                198,
-                198,
-                31373,
-            ], self.tokenizer.encode("hello\n\nhello")
 
         # multithreading and batching
         self.batch_size_per_gpu = batch_size  # todo: adaptive batch size
